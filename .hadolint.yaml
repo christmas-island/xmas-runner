@@ -1,0 +1,11 @@
+ignored:
+  # Pinning apt versions on ubuntu:24.04 is impractical for a runner image
+  # that needs to stay current with security updates
+  - DL3008
+  # We use bash pipes extensively for downloading/extracting — pipefail
+  # is set via SHELL directive at top of Dockerfile
+  - DL4006
+  # cd in RUN is fine for build-and-remove patterns
+  - DL3003
+  # npm install -g without pinning is intentional (we want latest yarn)
+  - DL3016

@@ -1,0 +1,69 @@
+# =============================================================================
+# xmas-runner — docker-compose for local deployment
+# =============================================================================
+# Usage:
+#   cp .env.example .env   # Fill in your values
+#   docker compose up -d
+# =============================================================================
+
+services:
+  runner:
+    image: ghcr.io/christmas-island/xmas-runner:latest
+    # Uncomment to build locally instead of pulling from GHCR:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+
+    # On Apple Silicon, uncomment to run via Rosetta/QEMU:
+    # platform: linux/amd64
+
+    environment:
+      # --- Authentication (choose ONE method) ---
+
+      # Method 1: Direct runner token (from GitHub UI)
+      # RUNNER_TOKEN: "AXXXX..."
+
+      # Method 2: PAT-based auto-registration (recommended)
+      GITHUB_PAT: "${GITHUB_PAT}"
+
+      # Runner scope: 'org' for org-level runner, 'repo' for repo-level
+      RUNNER_SCOPE: "${RUNNER_SCOPE:-org}"
+
+      # Target: org name (for org scope) or owner/repo (for repo scope)
+      RUNNER_TARGET: "${RUNNER_TARGET:-christmas-island}"
+
+      # --- Runner configuration ---
+
+      # Display name in GitHub (defaults to container hostname)
+      RUNNER_NAME: "${RUNNER_NAME:-xmas-runner-local}"
+
+      # Comma-separated labels applied to this runner
+      RUNNER_LABELS: "${RUNNER_LABELS:-self-hosted,linux,x64,xmas-runner}"
+
+      # Runner group (must exist in your org settings)
+      RUNNER_GROUP: "${RUNNER_GROUP:-default}"
+
+      # Ephemeral: runner picks up one job then exits (recommended for CI)
+      EPHEMERAL: "${EPHEMERAL:-true}"
+
+      # GitHub base URL (change for GitHub Enterprise Server)
+      GITHUB_URL: "${GITHUB_URL:-https://github.com}"
+
+    volumes:
+      # Mount host Docker socket — enables Docker builds inside workflows
+      # The runner uses Docker-outside-of-Docker (not DinD)
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Persist runner work directory across restarts (optional)
+      - runner-work:/home/runner/actions-runner/_work
+
+    restart: unless-stopped
+
+    # Security: don't run as root but allow Docker socket access
+    # The runner user is already non-root in the image
+    # group_add ensures the runner can access the Docker socket
+    group_add:
+      - "docker"
+
+volumes:
+  runner-work:
