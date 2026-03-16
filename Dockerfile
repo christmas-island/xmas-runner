@@ -11,19 +11,19 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Build arguments — version pins (easy to update)
 # ---------------------------------------------------------------------------
 ARG TARGETARCH
-ARG RUNNER_VERSION=2.322.0
+ARG RUNNER_VERSION=2.332.0
 ARG GO_VERSION=1.24.1
 ARG NODE_MAJOR=22
-ARG GORELEASER_VERSION=2.8.2
-ARG GOLANGCI_LINT_VERSION=1.63.4
+ARG GORELEASER_VERSION=2.14.3
+ARG GOLANGCI_LINT_VERSION=2.11.3
 ARG HADOLINT_VERSION=2.12.0
-ARG SHFMT_VERSION=3.10.0
-ARG OPENTOFU_VERSION=1.9.0
-ARG TFLINT_VERSION=0.55.1
-ARG TERRAFORM_DOCS_VERSION=0.19.0
-ARG PREK_VERSION=4.1.0
-ARG BATS_VERSION=1.11.1
-ARG SHELLCHECK_VERSION=0.10.0
+ARG SHFMT_VERSION=3.13.0
+ARG OPENTOFU_VERSION=1.11.5
+ARG TFLINT_VERSION=0.61.0
+ARG TERRAFORM_DOCS_VERSION=0.21.0
+ARG PREK_VERSION=0.3.6
+ARG BATS_VERSION=1.13.0
+ARG SHELLCHECK_VERSION=0.11.0
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -120,8 +120,8 @@ RUN GOARCH=${TARGETARCH} \
 # --- prek (pre-commit-rs) ---
 RUN GOARCH=${TARGETARCH} \
     && if [ "${GOARCH}" = "amd64" ]; then PREKARCH="x86_64"; else PREKARCH="aarch64"; fi \
-    && curl -fsSL "https://github.com/j178/pre-commit-rs/releases/download/v${PREK_VERSION}/pre-commit-rs-v${PREK_VERSION}-${PREKARCH}-unknown-linux-musl.tar.gz" \
-       | tar -C /usr/local/bin -xz prek
+    && curl -fsSL "https://github.com/j178/pre-commit-rs/releases/download/v${PREK_VERSION}/prek-${PREKARCH}-unknown-linux-musl.tar.gz" \
+       | tar -C /usr/local/bin --strip-components=1 -xz
 
 # --- hadolint ---
 RUN GOARCH=${TARGETARCH} \
