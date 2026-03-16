@@ -14,17 +14,30 @@ services:
     #   context: .
     #   dockerfile: Dockerfile
 
-    # On Apple Silicon, uncomment to run via Rosetta/QEMU:
-    # platform: linux/amd64
+    # Required on Apple Silicon (M1/M2/M3/M4) to match CI x86_64 environment.
+    # Without this, the runner registers as arm64 and won't pick up x64 jobs.
+    platform: linux/amd64
+
+    # Fix Docker socket permissions on Docker Desktop for Mac.
+    # Docker Desktop creates the socket as root:root, so the runner can't access
+    # it without a chmod. This overrides the default entrypoint to apply the fix
+    # before handing off to the real runner entrypoint.
+    entrypoint: ["/bin/bash", "-c", "sudo chmod 666 /var/run/docker.sock && exec /home/runner/entrypoint.sh"]
+
+    # Required for the entrypoint chmod to work on Docker Desktop Mac
+    privileged: true
 
     environment:
       # --- Authentication (choose ONE method) ---
 
-      # Method 1: Direct runner token (from GitHub UI)
-      # RUNNER_TOKEN: "AXXXX..."
+      # Method 1: Direct runner token (from GitHub UI, expires ~1hr)
+      # Settings → Actions → Runners → New self-hosted runner
+      RUNNER_TOKEN: "${RUNNER_TOKEN:-}"
 
-      # Method 2: PAT-based auto-registration (recommended)
-      GITHUB_PAT: "${GITHUB_PAT}"
+      # Method 2: PAT-based auto-registration (recommended for persistent runners)
+      # Must be a CLASSIC PAT with admin:org scope.
+      # Fine-grained PATs do NOT support self-hosted runner management.
+      GITHUB_PAT: "${GITHUB_PAT:-}"
 
       # Runner scope: 'org' for org-level runner, 'repo' for repo-level
       RUNNER_SCOPE: "${RUNNER_SCOPE:-org}"
@@ -38,13 +51,13 @@ services:
       RUNNER_NAME: "${RUNNER_NAME:-xmas-runner-local}"
 
       # Comma-separated labels applied to this runner
-      RUNNER_LABELS: "${RUNNER_LABELS:-self-hosted,linux,x64,xmas-runner}"
+      RUNNER_LABELS: "${RUNNER_LABELS:-self-hosted,linux,X64,xmas-isle,xmas-runner}"
 
       # Runner group (must exist in your org settings)
       RUNNER_GROUP: "${RUNNER_GROUP:-default}"
 
       # Ephemeral: runner picks up one job then exits (recommended for CI)
-      EPHEMERAL: "${EPHEMERAL:-true}"
+      EPHEMERAL: "${EPHEMERAL:-false}"
 
       # GitHub base URL (change for GitHub Enterprise Server)
       GITHUB_URL: "${GITHUB_URL:-https://github.com}"
@@ -54,16 +67,10 @@ services:
       # The runner uses Docker-outside-of-Docker (not DinD)
       - /var/run/docker.sock:/var/run/docker.sock
 
-      # Persist runner work directory across restarts (optional)
-      - runner-work:/home/runner/actions-runner/_work
+      # NOTE: runner-work volume mount is intentionally omitted.
+      # On Docker Desktop for Mac, mounting a named volume at _work causes
+      # "permission denied" errors because Docker Desktop VM volume ownership
+      # doesn't match the runner user inside the container.
+      # The runner works fine with ephemeral storage; for persistence, see README.
 
     restart: unless-stopped
-
-    # Security: don't run as root but allow Docker socket access
-    # The runner user is already non-root in the image
-    # group_add ensures the runner can access the Docker socket
-    group_add:
-      - "docker"
-
-volumes:
-  runner-work:

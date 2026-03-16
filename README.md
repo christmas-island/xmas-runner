@@ -77,13 +77,81 @@ git, curl, jq, bash, ca-certificates, wget, zip, unzip, sudo
 
 For repo-level runners, use `RUNNER_SCOPE=repo` and `RUNNER_TARGET=christmas-island/repo-name`.
 
-## Apple Silicon notes
+## Apple Silicon setup (M1/M2/M3/M4)
 
-The image is built for `linux/amd64` and `linux/arm64`. On Apple Silicon Macs:
+The image is built for `linux/amd64`. On Apple Silicon Macs you need a few extra steps to match the CI x86_64 environment and work around Docker Desktop quirks.
 
-- **Native arm64**: Works natively, best performance
-- **amd64 via Rosetta**: Add `platform: linux/amd64` in docker-compose.yml (slower but matches CI environment)
-- Docker Desktop enables Rosetta by default on macOS
+### Step-by-step
+
+1. **Clone the repo and copy the env file**
+   ```bash
+   git clone https://github.com/christmas-island/xmas-runner.git
+   cd xmas-runner
+   cp .env.example .env
+   ```
+
+2. **Get a registration token or PAT**
+
+   **Option A — Registration token (quick, expires ~1hr)**
+   - GitHub org → Settings → Actions → Runners → **New self-hosted runner**
+   - Copy the token that starts with `A`
+
+   **Option B — Classic PAT (recommended for persistent runners)**
+   - Go to https://github.com/settings/tokens → **Generate new token (classic)**
+   - Scopes needed: `admin:org`
+   - ⚠️ **Fine-grained PATs do NOT work** for self-hosted runner management — you must use a classic PAT
+
+3. **Edit `.env`**
+   ```
+   # Use one of:
+   RUNNER_TOKEN=AXXXXXXXXX      # from GitHub UI (Option A)
+   GITHUB_PAT=ghp_xxxxxxxxx     # classic PAT (Option B)
+
+   RUNNER_LABELS=self-hosted,linux,X64,xmas-isle,xmas-runner
+   RUNNER_NAME=my-mac-runner    # unique name if running multiple
+   ```
+
+4. **Start the runner**
+   ```bash
+   docker compose up -d
+   ```
+
+5. **Verify it connected**
+   ```bash
+   docker logs -f xmas-runner-runner-1
+   # Look for: "Connected to GitHub"
+   ```
+
+The `docker-compose.yml` already includes the Apple Silicon fixes:
+- `platform: linux/amd64` — runs via Rosetta to match CI x86_64 environment
+- `privileged: true` + entrypoint chmod — fixes Docker socket permissions on Docker Desktop Mac
+- No `runner-work` volume mount — avoids permission denied errors on Docker Desktop
+
+## Troubleshooting
+
+### Platform mismatch (`linux/amd64 does not match detected host platform linux/arm64`)
+The `platform: linux/amd64` line in `docker-compose.yml` must be set. This is already the default in this repo but if you see this warning, verify it's uncommented.
+
+### Runner not picking up jobs
+Check that your runner's labels match the `runs-on` value in your workflow. For christmas-island workflows, the runner must have the `xmas-isle` label:
+```yaml
+runs-on: [self-hosted, linux, X64, xmas-isle]
+```
+Check registered labels in **GitHub → Settings → Actions → Runners**.
+
+### "A session for this runner already exists"
+The runner name is already registered but the container is gone. Either:
+- Change `RUNNER_NAME` in `.env` to something unique
+- Or go to GitHub → Settings → Actions → Runners → find the ghost runner → Remove
+
+### Permission denied on `_work` directory
+Don't mount a named volume at `/home/runner/actions-runner/_work`. Docker Desktop for Mac's volume ownership doesn't match the runner user inside the container. The `runner-work` volume mount has been removed from `docker-compose.yml` for this reason.
+
+### Docker socket permission denied inside container
+Docker Desktop for Mac creates the socket as `root:root`. The entrypoint in `docker-compose.yml` runs `sudo chmod 666 /var/run/docker.sock` before starting the runner to fix this. If you see socket permission errors, make sure you're using the `entrypoint` override and `privileged: true` from `docker-compose.yml`.
+
+### Runner token expired
+Registration tokens from the GitHub UI expire in ~1 hour. If your container restarts and fails to register, get a new token — or switch to `GITHUB_PAT` with a classic PAT (`admin:org` scope) which auto-renews on each start.
 
 ## Building locally
 
