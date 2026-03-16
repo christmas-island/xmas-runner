@@ -1,32 +1,49 @@
 # =============================================================================
-# xmas-runner — docker-compose for local deployment
+# xmas-runner — docker-compose with Docker-in-Docker
 # =============================================================================
 # Usage:
 #   cp .env.example .env   # Fill in your values
 #   docker compose up -d
+#
+# DinD avoids Docker Desktop file-sharing issues on macOS.
+# Both containers are pinned to linux/amd64 for x86_64 CI compatibility
+# on Apple Silicon (runs via Rosetta/QEMU).
 # =============================================================================
 
 services:
+  # Docker-in-Docker daemon — provides a real Docker Engine
+  dind:
+    image: docker:28-dind
+    platform: linux/amd64
+    privileged: true
+    restart: unless-stopped
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - docker-data:/var/lib/docker
+      # Share runner workspace so CI bind mounts resolve inside DinD
+      - runner-work:/home/runner/actions-runner/_work
+    networks:
+      - runner-net
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # GitHub Actions self-hosted runner
   runner:
     image: ghcr.io/christmas-island/xmas-runner:latest
     # Uncomment to build locally instead of pulling from GHCR:
     # build:
     #   context: .
     #   dockerfile: Dockerfile
-
-    # Required on Apple Silicon (M1/M2/M3/M4) to match CI x86_64 environment.
-    # Without this, the runner registers as arm64 and won't pick up x64 jobs.
     platform: linux/amd64
-
-    # Fix Docker socket permissions on Docker Desktop for Mac.
-    # Docker Desktop creates the socket as root:root, so the runner can't access
-    # it without a chmod. This overrides the default entrypoint to apply the fix
-    # before handing off to the real runner entrypoint.
-    entrypoint: ["/bin/bash", "-c", "sudo chmod 666 /var/run/docker.sock && exec /home/runner/entrypoint.sh"]
-
-    # Required for the entrypoint chmod to work on Docker Desktop Mac
-    privileged: true
-
+    restart: unless-stopped
+    depends_on:
+      dind:
+        condition: service_healthy
     environment:
       # --- Authentication (choose ONE method) ---
 
@@ -51,7 +68,7 @@ services:
       RUNNER_NAME: "${RUNNER_NAME:-xmas-runner-local}"
 
       # Comma-separated labels applied to this runner
-      RUNNER_LABELS: "${RUNNER_LABELS:-self-hosted,linux,X64,xmas-isle,xmas-runner}"
+      RUNNER_LABELS: "${RUNNER_LABELS:-self-hosted,Linux,X64,xmas-isle,xmas-runner}"
 
       # Runner group (must exist in your org settings)
       RUNNER_GROUP: "${RUNNER_GROUP:-default}"
@@ -62,15 +79,20 @@ services:
       # GitHub base URL (change for GitHub Enterprise Server)
       GITHUB_URL: "${GITHUB_URL:-https://github.com}"
 
+      # Point Docker CLI at the DinD daemon instead of host socket
+      DOCKER_HOST: tcp://dind:2375
+
     volumes:
-      # Mount host Docker socket — enables Docker builds inside workflows
-      # The runner uses Docker-outside-of-Docker (not DinD)
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared workspace — same path in both containers for bind mount compat
+      - runner-work:/home/runner/actions-runner/_work
 
-      # NOTE: runner-work volume mount is intentionally omitted.
-      # On Docker Desktop for Mac, mounting a named volume at _work causes
-      # "permission denied" errors because Docker Desktop VM volume ownership
-      # doesn't match the runner user inside the container.
-      # The runner works fine with ephemeral storage; for persistence, see README.
+    networks:
+      - runner-net
 
-    restart: unless-stopped
+volumes:
+  docker-data:
+  runner-work:
+
+networks:
+  runner-net:
+    driver: bridge
